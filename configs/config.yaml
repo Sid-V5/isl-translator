@@ -37,13 +37,13 @@ model:
   stgcn:
     in_channels: 3  # x, y, confidence
     hidden_channels: 64
-    num_layers: 4
+    num_layers: 2
     temporal_kernel: 9
     dropout: 0.2
   
   # Transformer settings
   transformer:
-    d_model: 256
+    d_model: 64
     nhead: 8
     num_encoder_layers: 4
     dim_feedforward: 1024
