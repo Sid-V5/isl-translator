@@ -36,9 +36,26 @@ class WebcamDemo:
         self.overlap = overlap
         self.beam_width = beam_width
         
-        # Load model
+        # Load model config
+        import yaml
+        config_path = Path(__file__).parent.parent.parent / "configs" / "config.yaml"
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+            
+        model_cfg = config.get("model", {})
+        trans_cfg = model_cfg.get("transformer", {})
+        stgcn_cfg = model_cfg.get("stgcn", {})
+
         print("Loading model...")
-        self.model = ISLTranslator.load(checkpoint_path, use_translation=False)
+        self.model = ISLTranslator.load(
+            checkpoint_path, 
+            use_translation=False,
+            d_model=trans_cfg.get("d_model", 64),
+            nhead=trans_cfg.get("nhead", 8),
+            num_encoder_layers=trans_cfg.get("num_encoder_layers", 4),
+            stgcn_hidden=stgcn_cfg.get("hidden_channels", 64),
+            stgcn_layers=stgcn_cfg.get("num_layers", 2),
+        )
         self.model = self.model.to(device)
         self.model.eval()
         
