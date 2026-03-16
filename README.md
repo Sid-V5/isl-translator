@@ -6,11 +6,11 @@ Continuous Indian Sign Language (ISL) recognition system using a hybrid ST-GCN +
 
 ## Architecture
 
-1. **Keypoint extraction** — MediaPipe Holistic extracts 543 2D keypoints per frame (33 pose, 468 face, 21×2 hand).
-2. **ST-GCN encoder** — Models spatial relationships across the skeletal graph structure.
-3. **Transformer encoder** — Captures temporal dependencies across the frame sequence.
-4. **CTC head** — Connectionist Temporal Classification for alignment-free gloss prediction.
-5. **IndicTrans2 (optional)** — Translates predicted gloss sequences into Hindi/English text.
+1. **Keypoint extraction** - MediaPipe Holistic extracts 543 2D keypoints per frame (33 pose, 468 face, 21×2 hand).
+2. **ST-GCN encoder** - Models spatial relationships across the skeletal graph structure.
+3. **Transformer encoder** - Captures temporal dependencies across the frame sequence.
+4. **CTC head** - Connectionist Temporal Classification for alignment-free gloss prediction.
+5. **IndicTrans2 (optional)** - Translates predicted gloss sequences into Hindi/English text.
 
 ## Repository Structure
 
@@ -29,9 +29,9 @@ isl-translator/
 
 Training and keypoint extraction were run on Kaggle due to dataset size and compute requirements. Only the primary notebooks are included here; additional resumption notebooks (needed due to Kaggle session timeouts) follow the same setup.
 
-- `01_extract_keypoints.ipynb` — MediaPipe keypoint extraction from raw video.
-- `02_pretraining_include.ipynb` — Full training pipeline on INCLUDE.
-- `03_finetune_csltr.ipynb` — Fine-tuning for sentence-level translation.
+- `01_extract_keypoints.ipynb` - MediaPipe keypoint extraction from raw video.
+- `02_pretraining_include.ipynb` - Full training pipeline on INCLUDE.
+- `03_finetune_csltr.ipynb` - Fine-tuning for sentence-level translation.
 
 ## Local Inference
 
