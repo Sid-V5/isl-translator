@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Real-time Webcam Demo for ISL Translation (60fps optimized).
+Real-time webcam demo for ISL translation.
 
 Usage:
     python src/inference/demo.py --checkpoint checkpoints/best.pt
@@ -22,15 +22,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.models.isl_model import ISLTranslator
 
 
-# ── Threaded camera capture ──────────────────────────────────────────────────
-
 class CameraStream:
-    """Threaded camera capture for zero-latency frame reads."""
+    """Threaded camera capture to avoid blocking the main loop."""
 
     def __init__(self, src: int = 0, width: int = 1280, height: int = 720):
-        self.cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
+        self.cap = cv2.VideoCapture(src)
+        if not self.cap.isOpened():
+            # Fallback to DirectShow if default backend fails
+            self.cap = cv2.VideoCapture(src, cv2.CAP_DSHOW)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+        self.cap.set(cv2.CAP_PROP_FPS, 60)
         self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         self.ret = False
         self.frame = None
@@ -53,10 +55,8 @@ class CameraStream:
         self.cap.release()
 
 
-# ── Lightweight keypoint extraction (MediaPipe Holistic) ─────────────────────
-
 class FastKeypointExtractor:
-    """Optimized MediaPipe Holistic extractor using lite model."""
+    """MediaPipe Holistic keypoint extractor (lite model for speed)."""
 
     def __init__(self, complexity: int = 0, min_det: float = 0.5, min_track: float = 0.5):
         import mediapipe as mp
@@ -116,7 +116,7 @@ class FastKeypointExtractor:
         self.holistic.close()
 
 
-# ── Skeleton connections ─────────────────────────────────────────────────────
+# Skeleton connection indices
 
 _POSE_CONNECTIONS = [
     (11, 12), (11, 13), (13, 15), (12, 14), (14, 16),
@@ -132,7 +132,7 @@ _HAND_CONNECTIONS = [
     (13, 17), (17, 18), (18, 19), (19, 20), (0, 17),
 ]
 
-# Face contour indices (jawline, eyebrows, eyes, nose, lips)
+# Face mesh contour indices
 _FACE_OVAL = [
     10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288,
     397, 365, 379, 378, 400, 377, 152, 148, 176, 149, 150, 136,
@@ -143,7 +143,7 @@ _RIGHT_EYE = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 3
 _LIPS_OUTER = [61, 146, 91, 181, 84, 17, 314, 405, 321, 375, 291, 409, 270, 269, 267, 0, 37, 39, 40, 185, 61]
 
 
-# ── Color palette ────────────────────────────────────────────────────────────
+# Color palette (BGR)
 
 COL_POSE_JOINT = (100, 255, 180)
 COL_POSE_BONE = (60, 200, 140)
@@ -161,7 +161,7 @@ COL_CONF_HIGH = (0, 255, 160)
 COL_CONF_LOW = (80, 80, 80)
 
 
-# ── Drawing utilities ────────────────────────────────────────────────────────
+# Drawing helpers
 
 def _draw_chain(frame, keypoints, indices, offset, w, h, color, thickness=1, closed=False):
     """Draw connected chain of keypoints."""
@@ -186,7 +186,7 @@ def _draw_joints(frame, keypoints, n, offset, w, h, color, radius, conf_thresh=0
             px, py = int(x * w), int(y * h)
             pts[i] = (px, py)
             cv2.circle(frame, (px, py), radius, color, -1, cv2.LINE_AA)
-            # Subtle glow
+            # Outer ring for visibility
             cv2.circle(frame, (px, py), radius + 2, (*color[:2], color[2] // 3), 1, cv2.LINE_AA)
     return pts
 
@@ -199,31 +199,31 @@ def _draw_bones(frame, pts, connections, color, thickness=2):
 
 
 def draw_skeleton(frame, keypoints, meta):
-    """Draw full professional skeleton overlay."""
+    """Draw skeleton overlay on the frame."""
     h, w = frame.shape[:2]
     POSE_OFF = 0
     FACE_OFF = 33
     LH_OFF = 33 + 468
     RH_OFF = 33 + 468 + 21
 
-    # ── Face contour (subtle) ──
+    # Face contour
     if meta["face"]:
         _draw_chain(frame, keypoints, _FACE_OVAL, FACE_OFF, w, h, COL_FACE, 1)
         _draw_chain(frame, keypoints, _LEFT_EYE, FACE_OFF, w, h, COL_FACE_FEAT, 1)
         _draw_chain(frame, keypoints, _RIGHT_EYE, FACE_OFF, w, h, COL_FACE_FEAT, 1)
         _draw_chain(frame, keypoints, _LIPS_OUTER, FACE_OFF, w, h, COL_FACE_FEAT, 1)
 
-    # ── Pose skeleton ──
+    # Pose
     if meta["pose"]:
         pts = _draw_joints(frame, keypoints, 33, POSE_OFF, w, h, COL_POSE_JOINT, 4, conf_thresh=0.3)
         _draw_bones(frame, pts, _POSE_CONNECTIONS, COL_POSE_BONE, 2)
 
-    # ── Left hand ──
+    # Left hand
     if meta["lh"]:
         pts = _draw_joints(frame, keypoints, 21, LH_OFF, w, h, COL_LH_JOINT, 5)
         _draw_bones(frame, pts, _HAND_CONNECTIONS, COL_LH_BONE, 2)
 
-    # ── Right hand ──
+    # Right hand
     if meta["rh"]:
         pts = _draw_joints(frame, keypoints, 21, RH_OFF, w, h, COL_RH_JOINT, 5)
         _draw_bones(frame, pts, _HAND_CONNECTIONS, COL_RH_BONE, 2)
@@ -232,27 +232,27 @@ def draw_skeleton(frame, keypoints, meta):
 
 
 def draw_hud(frame, glosses, confidence, fps, buf_len, is_signing):
-    """Draw polished heads-up display."""
+    """Draw the overlay HUD (FPS, confidence, predictions)."""
     h, w = frame.shape[:2]
 
-    # ── Top banner (translucent) ──
+    # Top banner
     overlay = frame.copy()
     cv2.rectangle(overlay, (0, 0), (w, 90), COL_HUD_BG, -1)
     cv2.addWeighted(overlay, 0.70, frame, 0.30, 0, frame)
 
-    # ── Status indicator (top-left) ──
+    # Status indicator
     status_color = COL_CONF_HIGH if is_signing else COL_CONF_LOW
     cv2.circle(frame, (20, 25), 6, status_color, -1, cv2.LINE_AA)
     status_text = "DETECTING" if is_signing else "IDLE"
     cv2.putText(frame, status_text, (34, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.45, status_color, 1, cv2.LINE_AA)
 
-    # ── FPS (top-right) ──
+    # FPS counter
     fps_text = f"{fps:.0f} FPS"
     cv2.putText(frame, fps_text, (w - 110, 28),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, COL_HUD_ACCENT, 1, cv2.LINE_AA)
 
-    # ── Confidence bar (top-right, below FPS) ──
+    # Confidence bar
     bar_x, bar_y, bar_w, bar_h = w - 140, 40, 120, 8
     cv2.rectangle(frame, (bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h), (40, 40, 40), -1)
     fill = min(confidence, 1.0)
@@ -261,7 +261,7 @@ def draw_hud(frame, glosses, confidence, fps, buf_len, is_signing):
     cv2.putText(frame, f"Conf: {confidence:.0%}", (bar_x, bar_y + 22),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, COL_HUD_DIM, 1, cv2.LINE_AA)
 
-    # ── Buffer indicator (top-right, below confidence) ──
+    # Buffer indicator
     buf_fill = min(buf_len / 64, 1.0)
     cv2.rectangle(frame, (bar_x, bar_y + 30), (bar_x + bar_w, bar_y + 38), (40, 40, 40), -1)
     cv2.rectangle(frame, (bar_x, bar_y + 30), (bar_x + int(bar_w * buf_fill), bar_y + 38),
@@ -269,7 +269,7 @@ def draw_hud(frame, glosses, confidence, fps, buf_len, is_signing):
     cv2.putText(frame, f"Buffer: {buf_len}/64", (bar_x, bar_y + 52),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, COL_HUD_DIM, 1, cv2.LINE_AA)
 
-    # ── Gloss output (centered, large) ──
+    # Gloss output
     if is_signing and glosses:
         gloss_text = "  ".join(glosses)
     else:
@@ -279,7 +279,7 @@ def draw_hud(frame, glosses, confidence, fps, buf_len, is_signing):
         text_size = cv2.getTextSize(gloss_text, cv2.FONT_HERSHEY_SIMPLEX, 0.85, 2)[0]
         text_x = max(15, (w - text_size[0]) // 2)
 
-        # Bottom translucent banner for glosses
+        # Bottom banner
         overlay2 = frame.copy()
         cv2.rectangle(overlay2, (0, h - 65), (w, h), COL_HUD_BG, -1)
         cv2.addWeighted(overlay2, 0.70, frame, 0.30, 0, frame)
@@ -289,14 +289,14 @@ def draw_hud(frame, glosses, confidence, fps, buf_len, is_signing):
         cv2.putText(frame, "PREDICTED GLOSSES", (text_x, h - 50),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, COL_HUD_ACCENT, 1, cv2.LINE_AA)
 
-    # ── Bottom instructions ──
+    # Controls
     cv2.putText(frame, "Q Quit  |  C Clear", (15, h - 8),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.35, (60, 60, 60), 1, cv2.LINE_AA)
 
     return frame
 
 
-# ── Confidence-aware decoding ────────────────────────────────────────────────
+# Decoding with confidence filtering
 
 def decode_with_confidence(model, keypoints_tensor, lengths, device, conf_threshold=0.35):
     """
@@ -341,10 +341,10 @@ def decode_with_confidence(model, keypoints_tensor, lengths, device, conf_thresh
         return glosses if is_signing else [], avg_conf, is_signing
 
 
-# ── Main demo loop ───────────────────────────────────────────────────────────
+# Main
 
 def main():
-    parser = argparse.ArgumentParser(description="ISL Translator — Real-time Demo")
+    parser = argparse.ArgumentParser(description="ISL Translator demo")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to best.pt")
     parser.add_argument("--camera", type=int, default=0, help="Camera index")
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
@@ -355,7 +355,7 @@ def main():
 
     device = args.device if torch.cuda.is_available() else "cpu"
 
-    # ── Load model ──
+    # Load model from config
     import yaml
     config_path = Path(__file__).parent.parent.parent / "configs" / "config.yaml"
     with open(config_path, "r") as f:
@@ -376,12 +376,12 @@ def main():
     )
     model = model.to(device).eval()
 
-    # ── Init camera and extractor ──
+    # Camera and extractor setup
     print("[2/3] Starting camera stream...")
     cam = CameraStream(src=args.camera, width=args.width, height=args.height)
     time.sleep(0.5)
 
-    print("[3/3] Initializing MediaPipe (lite mode)...")
+    print("[3/3] Initializing MediaPipe...")
     extractor = FastKeypointExtractor(complexity=0)
 
     keypoint_buffer = deque(maxlen=128)
@@ -404,12 +404,12 @@ def main():
         if not ret or frame is None:
             continue
 
-        # ── MediaPipe extraction ──
+        # Extract keypoints
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         kps, meta = extractor.extract(rgb)
         keypoint_buffer.append(kps)
 
-        # ── Model inference (throttled) ──
+        # Run model inference at fixed intervals
         now = time.perf_counter()
         if now - last_inference_time > inference_interval and len(keypoint_buffer) >= 16:
             last_inference_time = now
@@ -420,7 +420,7 @@ def main():
                 model, inp, lengths, device, conf_threshold=args.conf
             )
 
-        # ── Draw ──
+        # Render overlay
         draw_skeleton(frame, kps, meta)
 
         # FPS
