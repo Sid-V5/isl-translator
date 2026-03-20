@@ -35,7 +35,7 @@ Training and keypoint extraction were run on Kaggle due to dataset size and comp
 
 ## Local Inference
 
-Requires an NVIDIA GPU with ≥8 GB VRAM (tested on RTX 4060).
+Requires an NVIDIA GPU (tested on RTX 4060).
 
 ```bash
 git clone https://github.com/Sid-V5/isl-translator.git
